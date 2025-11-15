@@ -1,5 +1,6 @@
 #!/bin/bash
 
+export LC_ALL=C
 set -m
 
 show_help() {
@@ -220,7 +221,6 @@ cancel() {
   # Generate summary statistics
   generate_summary
 
-  echo "# Test finished at $(date)" >> "$LOGFILE"
   echo "Cleanup complete. Exiting."
 
   exit 0
@@ -233,67 +233,65 @@ trap cancel INT TERM
 ###############################################################################
 
 generate_summary() {
-  if [[ ! -f "$LOGFILE" ]]; then
-    return
-  fi
+  if [[ ! -f "$LOGFILE" ]]; then return; fi
 
-  echo ""
-  echo "========================================="
-  echo "Battery Test Summary"
-  echo "========================================="
-  echo "System: $MODEL_NAME ($CHIP_NAME, $MEMORY_SIZE RAM)"
-  echo "OS:     $OS_FULL"
-  echo "========================================="
-  
-  # Extract data lines (skip comments)
-  DATA=$(grep -v "^#" "$LOGFILE" | tail -n +2)
-  
-  if [[ -z "$DATA" ]]; then
-    echo "No data collected."
-    return
-  fi
-  
-  FIRST_LINE=$(echo "$DATA" | head -n 1)
-  LAST_LINE=$(echo "$DATA" | tail -n 1)
-  
-  START_PCT=$(echo "$FIRST_LINE" | cut -d',' -f2)
-  END_PCT=$(echo "$LAST_LINE" | cut -d',' -f2)
-  START_TIME=$(echo "$FIRST_LINE" | cut -d',' -f1)
-  END_TIME=$(echo "$LAST_LINE" | cut -d',' -f1)
-  
-  # Calculate duration
-  START_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S" "$START_TIME" "+%s" 2>/dev/null)
-  END_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S" "$END_TIME" "+%s" 2>/dev/null)
-  
-  if [[ -n "$START_EPOCH" ]] && [[ -n "$END_EPOCH" ]]; then
-    DURATION_SEC=$((END_EPOCH - START_EPOCH))
-    DURATION_MIN=$((DURATION_SEC / 60))
-    DURATION_HR=$(echo "scale=2; $DURATION_MIN / 60" | bc)
+  # We use a block and redirect it to 'tee -a $LOGFILE'
+  # This ensures the summary appears on the screen AND at the bottom of the log.
+  {
+    echo ""
+    echo "========================================="
+    echo "Battery Test Summary"
+    echo "========================================="
+    echo "System: $MODEL_NAME ($CHIP_NAME, $MEMORY_SIZE RAM)"
+    echo "OS:     $OS_FULL"
+    echo "========================================="
     
-    echo "Start Time:      $START_TIME"
-    echo "End Time:        $END_TIME"
-    echo "Duration:        ${DURATION_HR} hours (${DURATION_MIN} minutes)"
-    echo "Start Battery:   ${START_PCT}%"
-    echo "End Battery:     ${END_PCT}%"
+    DATA=$(grep -v "^#" "$LOGFILE" | tail -n +2)
     
-    if [[ "$START_PCT" -gt "$END_PCT" ]]; then
-      DRAIN=$((START_PCT - END_PCT))
-      echo "Battery Drain:   ${DRAIN}%"
+    if [[ -z "$DATA" ]]; then
+      echo "No data collected."
+    else
+      FIRST_LINE=$(echo "$DATA" | head -n 1)
+      LAST_LINE=$(echo "$DATA" | tail -n 1)
       
-      if [[ $DRAIN -gt 0 ]] && [[ $DURATION_MIN -gt 0 ]]; then
-        DRAIN_RATE_PER_MIN=$(echo "scale=4; $DRAIN / $DURATION_MIN" | bc)
-        DRAIN_RATE_PER_HOUR=$(echo "scale=2; $DRAIN_RATE_PER_MIN * 60" | bc)
-        ESTIMATED_LIFE=$(echo "scale=2; 100 / $DRAIN_RATE_PER_HOUR" | bc)
-        echo "Drain Rate:      ${DRAIN_RATE_PER_HOUR}% per hour"
-        echo "Est. Full Life:  ${ESTIMATED_LIFE} hours"
+      START_PCT=$(echo "$FIRST_LINE" | cut -d';' -f2)
+      END_PCT=$(echo "$LAST_LINE" | cut -d';' -f2)
+      START_TIME=$(echo "$FIRST_LINE" | cut -d';' -f1)
+      END_TIME=$(echo "$LAST_LINE" | cut -d';' -f1)
+      
+      START_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S" "$START_TIME" "+%s" 2>/dev/null)
+      END_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S" "$END_TIME" "+%s" 2>/dev/null)
+      
+      if [[ -n "$START_EPOCH" ]] && [[ -n "$END_EPOCH" ]]; then
+        DURATION_SEC=$((END_EPOCH - START_EPOCH))
+        DURATION_MIN=$((DURATION_SEC / 60))
+        DURATION_HR=$(echo "scale=2; $DURATION_MIN / 60" | bc)
+        
+        echo "Start Time:      $START_TIME"
+        echo "End Time:        $END_TIME"
+        echo "Duration:        ${DURATION_HR} hours (${DURATION_MIN} minutes)"
+        echo "Start Battery:   ${START_PCT}%"
+        echo "End Battery:     ${END_PCT}%"
+        
+        if [[ "$START_PCT" -gt "$END_PCT" ]]; then
+          DRAIN=$((START_PCT - END_PCT))
+          echo "Battery Drain:   ${DRAIN}%"
+          
+          if [[ $DRAIN -gt 0 ]] && [[ $DURATION_MIN -gt 0 ]]; then
+            DRAIN_RATE_PER_MIN=$(echo "scale=4; $DRAIN / $DURATION_MIN" | bc)
+            DRAIN_RATE_PER_HOUR=$(echo "scale=2; $DRAIN_RATE_PER_MIN * 60" | bc)
+            ESTIMATED_LIFE=$(echo "scale=2; 100 / $DRAIN_RATE_PER_HOUR" | bc)
+            echo "Drain Rate:      ${DRAIN_RATE_PER_HOUR}% per hour"
+            echo "Est. Full Life:  ${ESTIMATED_LIFE} hours"
+          fi
+        fi
+        
+        echo "Workload Mode:   $WORKLOAD_MODE"
+        echo "Log File:        $LOGFILE"
       fi
     fi
-    
-    echo "Workload Mode:   $WORKLOAD_MODE"
-    echo "Log File:        $LOGFILE"
-  fi
-  
-  echo "========================================="
+    echo "========================================="
+  } | tee -a "$LOGFILE"
 }
 
 ###############################################################################
@@ -350,7 +348,7 @@ echo "CSV log file: $LOGFILE"
 # CSV header + Metadata
 {
   echo "# Battery Benchmark Test"
-  echo "# Started: $(date)"
+  echo "# Started: $(date "+%Y-%m-%d %H:%M:%S")"
   echo "# --------------------------------------"
   echo "# System Information:"
   echo "# Model:   $MODEL_NAME ($MODEL_ID)"
@@ -364,7 +362,7 @@ echo "CSV log file: $LOGFILE"
   echo "# Mode:    $WORKLOAD_MODE"
   [[ -n "$TARGET_PERCENT" ]] && echo "# Target: Stop at ${TARGET_PERCENT}%"
   echo "# Log Interval: ${LOG_INTERVAL}s"
-  echo "timestamp,battery_percent,power_state,time_remaining"
+  echo "timestamp;battery_percent;power_state;time_remaining"
 } > "$LOGFILE"
 
 # Prevent system sleep
@@ -517,7 +515,7 @@ echo "Started Git workload (PID: $GIT_TASK_PID)"
 
     # Only log valid entries
     if [ -n "$PCT" ] && [ -n "$STATE" ]; then
-      echo "$TIMESTAMP,$PCT,$STATE,$REMAIN" >> "$LOGFILE"
+      echo "$TIMESTAMP;$PCT;$STATE;$REMAIN" >> "$LOGFILE"
 
       # Check target percent
       if [[ -n "$TARGET_PERCENT" ]] && [[ "$PCT" -le "$TARGET_PERCENT" ]]; then
