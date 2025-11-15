@@ -78,9 +78,9 @@ The script creates a CSV file in the current directory (e.g., `battery_log_20251
 **Example Output:**
 
 ```csv
-timestamp,battery_percent,power_state,time_remaining
-2025-11-15 14:00:01,98,discharging,10:23
-2025-11-15 14:01:01,97,discharging,09:45
+timestamp;battery_percent;power_state;time_remaining
+2025-11-15 14:00:01;98;discharging;10:23
+2025-11-15 14:01:01;97;discharging;09:45
 ...
 ```
 
